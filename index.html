@@ -389,6 +389,29 @@
       arrow.classList.toggle('open');
     }
 
+    function toggleSearchAnalysis(ticker) {
+      const details = document.querySelector(`#search-details-${ticker}`);
+      const arrow = document.querySelector(`#search-arrow-${ticker}`);
+      if (details && arrow) {
+        details.classList.toggle('open');
+        arrow.classList.toggle('open');
+      }
+    }
+
+    function closeSearchResult() {
+      document.getElementById('searchResultContainer').innerHTML = '';
+      document.getElementById('searchResultContainer').style.display = 'none';
+    }
+
+    function addSearchResultToWatchlist(ticker) {
+      if (!visibleStocks.includes(ticker)) {
+        visibleStocks.push(ticker);
+        alert(ticker + ' added to watchlist!');
+        renderDashboard();
+        closeSearchResult();
+      }
+    }
+
     function generateCandleData(price, days) {
       const data = [];
       let p = price * 0.8;
@@ -666,12 +689,22 @@
 
     function renderSearchResult(ticker, stock, analysis) {
       try {
+        console.log('=== renderSearchResult START ===');
+        console.log('Ticker:', ticker);
+        console.log('Stock data:', stock);
+        console.log('Analysis:', analysis);
+        
         const scores = [analysis.fundamental.score, analysis.thematic.score, analysis.garp.score, analysis.smart_money.score, analysis.macro.score];
+        console.log('Scores array:', scores);
+        
         const alphaAvg = (scores[1] + scores[2] + scores[3] + scores[4]) / 4;
         const divergence = Math.round(alphaAvg - scores[0]);
+        console.log('Alpha:', alphaAvg, 'Divergence:', divergence);
+        
         const changeColor = stock.change >= 0 ? 'positive' : 'negative';
         const changeSymbol = stock.change >= 0 ? '▲' : '▼';
         const isInWatchlist = visibleStocks.includes(ticker);
+        console.log('Change color:', changeColor, 'In watchlist:', isInWatchlist);
 
         let html = `
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -756,13 +789,21 @@
           </div>
         `;
 
-        document.getElementById('searchResultCard').innerHTML = html;
-        setTimeout(() => drawCandlestick(ticker, `search-chart-${ticker}`), 100);
+        document.getElementById('searchResultContainer').innerHTML = html;
+        console.log('HTML rendered to searchResultContainer');
+        setTimeout(() => {
+          console.log('Drawing candlestick for:', ticker);
+          drawCandlestick(ticker, `search-chart-${ticker}`);
+        }, 100);
       } catch (error) {
-        console.error('Error rendering search result:', error);
+        console.error('=== RENDER ERROR ===');
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+        console.error('Error object:', error);
         document.getElementById('searchResultContainer').innerHTML = `
           <div style="background: #ffebee; border: 1px solid #f44336; padding: 1.5rem; border-radius: 8px; color: #c62828;">
-            <strong>Error:</strong> Failed to render analysis. Please try another ticker.
+            <strong>⚠️ Render Error:</strong> ${error.message}
+            <br><small style="color: #999;">Check console for details (F12)</small>
           </div>
         `;
       }
