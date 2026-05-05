@@ -411,6 +411,11 @@
         const canvasEl = document.getElementById(elementId);
         if (!canvasEl) return;
         const stock = getPriceData(ticker);
+        if (!stock || !stock.price) {
+          console.warn('No price data for candlestick:', ticker);
+          canvasEl.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999; font-size: 12px;">Chart data unavailable</div>';
+          return;
+        }
         const candleData = generateCandleData(stock.price, 60);
         const chartDiv = canvasEl;
         chartDiv.innerHTML = '';
@@ -606,7 +611,7 @@
       }
 
       const container = document.getElementById('searchResultContainer');
-      container.innerHTML = '<div style="text-align: center; padding: 2rem;"><p>Analyzing ' + ticker + '...</p></div>';
+      container.innerHTML = '<div style="text-align: center; padding: 2rem;"><p>⏳ Analyzing ' + ticker + '...</p></div>';
       container.style.display = 'block';
 
       console.log('Searching for:', ticker);
@@ -620,10 +625,17 @@
         console.log('API not connected, using demo data');
       }
 
+      // Use API data, fall back to demo, or create minimal data
       let stockData = priceData_search || demoData[ticker];
       if (!stockData) {
         console.warn('No data found for:', ticker);
-        stockData = { price: 0, change: 0, change_pct: 0, company: ticker };
+        stockData = { 
+          price: 100, 
+          change: 0, 
+          change_pct: 0, 
+          company: ticker + ' (Limited Data)',
+          price_usd: 100
+        };
       }
 
       let analysis = mockAnalysis[ticker];
@@ -632,7 +644,10 @@
         analysis = generateBasicAnalysis(ticker);
       }
 
+      console.log('Stock data:', stockData);
+      console.log('Analysis:', analysis);
       console.log('Rendering search result for:', ticker);
+      
       renderSearchResult(ticker, stockData, analysis);
       document.getElementById('searchInput').value = '';
     }
