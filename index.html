@@ -79,6 +79,22 @@
     .settings-panel button { width: 100%; padding: 8px; background: #2962ff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; margin-bottom: 0.5rem; }
     .settings-panel button:hover { background: #1e53e5; }
     .settings-panel .status-text { font-size: 11px; color: #666; padding: 0.5rem; background: #f9f9f9; border-radius: 4px; }
+    /* ===== ANALYZE FEATURE STYLES ===== */
+    .analysis-result-container { background: #e3f2fd; border: 2px solid #2962ff; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 12px rgba(41, 98, 255, 0.15); }
+    .analysis-result-container.hidden { display: none; }
+    .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem; }
+    .result-badge { background: #2962ff; color: white; padding: 6px 14px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .result-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .result-actions button { padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.3s; }
+    .add-btn { background: #4caf50; color: white; }
+    .add-btn:hover { background: #45a049; transform: scale(1.05); }
+    .cancel-btn { background: #f44336; color: white; }
+    .cancel-btn:hover { background: #da190b; transform: scale(1.05); }
+    .result-stock-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid #90caf9; margin-bottom: 1rem; }
+    .result-symbol { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+    .result-price-info { text-align: right; }
+    .result-price { font-size: 20px; font-weight: 600; color: #0066cc; }
+    .result-company { font-size: 11px; color: #999; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -107,10 +123,22 @@
 
     <div class="search-section">
       <div class="search-controls">
-        <input type="text" id="searchInput" class="search-input" placeholder="Search ticker to add custom stock" onkeypress="if(event.key==='Enter') searchStock()">
-        <button class="search-button" onclick="searchStock()">Search & Add</button>
+        <input type="text" id="searchInput" class="search-input" placeholder="Enter ticker symbol (e.g., MSFT, GOOG, AMZN)" onkeypress="if(event.key==='Enter') analyzeStock()">
+        <button class="search-button" onclick="analyzeStock()">Analyze</button>
         <span class="watchlist-count">Watchlist: <strong id="stockCount">19</strong> stocks</span>
       </div>
+    </div>
+
+    <!-- ANALYSIS RESULT CONTAINER (appears at top when analyzing) -->
+    <div id="analysisResultContainer" class="analysis-result-container hidden">
+      <div class="result-header">
+        <span class="result-badge">🔍 ANALYSIS RESULT</span>
+        <div class="result-actions">
+          <button class="add-btn" onclick="addToWatchlist()">+ ADD TO WATCHLIST</button>
+          <button class="cancel-btn" onclick="cancelAnalysis()">✕ CANCEL</button>
+        </div>
+      </div>
+      <div id="analysisResultContent"></div>
     </div>
 
     <div class="dashboard" id="dashboard"></div>
@@ -119,6 +147,49 @@
   </div>
 
   <script>
+    // ====================================================================
+    // EDGEWOOD ADVISORS DASHBOARD - CODE MAP & ORGANIZATION
+    // ====================================================================
+    // 
+    // SECTION 1: CONFIGURATION & DATA (Lines 140-600)
+    //   - stockData: All 19 ticker prices and changes
+    //   - mockAnalysis: 5D analysis for each ticker
+    //   - visibleStocks: Which tickers to display
+    // 
+    // SECTION 2: CORE RENDERING (Lines 601-750)
+    //   - renderDashboard(): Display all tickers
+    //   - renderCard(): Create HTML for one ticker
+    //   - toggleAnalysis(): Expand/collapse detail panels
+    // 
+    // SECTION 3: CANDLESTICK CHARTS & VISUALIZATION (Lines 720+)
+    //   - generateCandleData(): Create fake 52-week price history
+    //   - drawCandlestick(): Draw candlestick chart on page
+    //   ✓ SAFE TO MODIFY: Visual only, doesn't affect data
+    // 
+    // SECTION 4: SEARCH FEATURE (Lines 790+)
+    //   - searchStock(): Search for ticker and add to watchlist
+    //   ✓ SAFE TO MODIFY or REPLACE: Isolated from core
+    //   Future: Will be replaced with "Analyze" feature
+    // 
+    // SECTION 5: PAGE INITIALIZATION (End of file)
+    //   - renderDashboard() call: Load page on startup
+    //   ✓ SAFE: Just a function call
+    //
+    // ====================================================================
+    // SAFETY GUIDELINES:
+    // ====================================================================
+    // ✗ DO NOT MODIFY: renderDashboard() in Section 2
+    // ✗ DO NOT MODIFY: visibleStocks array logic
+    // ✓ SAFE TO MODIFY: Everything in Section 3, 4, 5
+    // ✓ SAFE TO ADD: New sections (keep isolated)
+    // ✓ SAFE TO TEST: Changes in Sections 3,4,5 won't break dashboard
+    //
+    // ====================================================================
+
+    // ====================================================================
+    // SECTION 1: CONFIGURATION & DATA (DO NOT MODIFY LIGHTLY)
+    // ====================================================================
+
     function getScoreClass(score) {
       if (score >= 80) return 'strong-positive';
       if (score >= 65) return 'positive';
@@ -163,6 +234,14 @@
           document.getElementById('apiStatus').textContent = 'Status: ✗ Connection Error';
         });
     }
+
+    // ====================================================================
+    // SECTION 3: CANDLESTICK CHARTS - PRICE VISUALIZATION
+    // ====================================================================
+    // Functions: generateCandleData(), drawCandlestick()
+    // Purpose: Create and display 52-week candlestick price charts
+    // Impact: Visual only - safe to modify
+    // ====================================================================
 
     function generateCandleData(price, days) {
       const data = [];
@@ -378,7 +457,16 @@
       }
     };
 
-    const visibleStocks = Object.keys(stockData);
+    let visibleStocks = Object.keys(stockData);
+
+    // ====================================================================
+    // SECTION 2: CORE RENDERING - DASHBOARD & CARDS
+    // ====================================================================
+    // Functions: renderDashboard(), renderCard(), toggleAnalysis()
+    // Purpose: Display all tickers and manage UI interactions
+    // CRITICAL: Do not modify renderDashboard() logic without testing
+    // Impact: Breaking changes here break ENTIRE dashboard
+    // ====================================================================
 
     function toggleAnalysis(ticker) {
       const detailsEl = document.querySelector(`#details-${ticker}`);
@@ -500,6 +588,8 @@
       `;
     }
 
+    // ---- SECTION 3 CONTINUED: drawCandlestick (Rendering function) ----
+
     function drawCandlestick(ticker) {
       try {
         const canvasEl = document.getElementById(`chart-${ticker}`);
@@ -574,6 +664,14 @@
       }
     }
 
+    // ====================================================================
+    // ⚠️ CRITICAL FUNCTION - SECTION 2 CORE ⚠️
+    // ====================================================================
+    // renderDashboard(): The heart of the app
+    // DO NOT MODIFY unless absolutely necessary
+    // Changes here can break ENTIRE dashboard
+    // ====================================================================
+
     function renderDashboard() {
       const dashboard = document.getElementById('dashboard');
       dashboard.innerHTML = visibleStocks.map(ticker => renderCard(ticker)).join('');
@@ -583,23 +681,190 @@
       });
     }
 
-    function searchStock() {
+    // ====================================================================
+    // SECTION 4: SEARCH & ADD FEATURE
+    // ====================================================================
+    // Functions: searchStock()
+    // Purpose: Search for ticker and add to watchlist
+    // Note: This section will be REPLACED with "Analyze" feature later
+    // Impact: Only affects search button - safe to modify/replace
+    // ====================================================================
+
+    // Store current analyzed ticker for ADD button
+    let currentAnalyzedTicker = null;
+    let currentAnalyzedData = null;
+
+    async function analyzeStock() {
       const ticker = document.getElementById('searchInput').value.toUpperCase().trim();
-      if (!ticker) return;
+      if (!ticker) {
+        alert('Please enter a ticker symbol');
+        return;
+      }
       
-      if (visibleStocks.includes(ticker)) {
-        alert(`${ticker} already in watchlist`);
+      // Check if ticker is valid (basic validation)
+      if (!/^[A-Z]{1,5}$/.test(ticker)) {
+        alert('Invalid ticker format. Use letters only (e.g., AAPL, MSFT)');
         return;
       }
 
-      if (stockData[ticker]) {
-        visibleStocks.push(ticker);
-        renderDashboard();
+      try {
+        // Show loading state
+        document.getElementById('searchInput').disabled = true;
+        document.getElementById('searchInput').placeholder = `Analyzing ${ticker}...`;
+        
+        console.log('Analyzing ticker:', ticker);
+        
+        // Check if ticker exists in stockData
+        if (stockData[ticker] && mockAnalysis[ticker]) {
+          const priceData = stockData[ticker];
+          const analysis = mockAnalysis[ticker];
+          
+          // Store for ADD button
+          currentAnalyzedTicker = ticker;
+          currentAnalyzedData = { priceData, analysis };
+          
+          // Display result at top
+          displayAnalysisResult(ticker, priceData, analysis);
+          
+          console.log('✓ Analysis complete:', ticker);
+        } else {
+          alert(`${ticker} not in database. Available: AAPL, NVDA, TSLA, GOOGL, AMZN, RKLB, MELI, AMD, MU, ANET, LITE, ASTS, CRWV, ISRG, COST, BE, SNDK, NVT, IREN`);
+          document.getElementById('searchInput').disabled = false;
+          document.getElementById('searchInput').placeholder = 'Enter ticker symbol (e.g., MSFT, GOOG, AMZN)';
+          return;
+        }
+        
+        // Reset input
         document.getElementById('searchInput').value = '';
-      } else {
-        alert(`${ticker} not in database. Available: MELI, RKLB, AAPL, NVDA, TSLA, CRWV, AMZN, GOOGL, BE, MU, SNDK, ASTS, ANET, LITE, AMD, NVT, ISRG, IREN, COST`);
+        document.getElementById('searchInput').disabled = false;
+        document.getElementById('searchInput').placeholder = 'Enter ticker symbol (e.g., MSFT, GOOG, AMZN)';
+        
+      } catch (error) {
+        console.error('✗ Error analyzing ticker:', error);
+        alert(`Error analyzing ${ticker}: ${error.message}`);
+        document.getElementById('searchInput').disabled = false;
       }
     }
+
+    function displayAnalysisResult(ticker, priceData, analysis) {
+      try {
+        const scores = [analysis.fundamental.score, analysis.thematic.score, analysis.garp.score, analysis.smart_money.score, analysis.macro.score];
+        const alphaAvg = (scores[1] + scores[2] + scores[3] + scores[4]) / 4;
+        const divergence = Math.round(alphaAvg - scores[0]);
+        
+        const changeColor = priceData.change >= 0 ? 'positive' : 'negative';
+        const changeSymbol = priceData.change >= 0 ? '▲' : '▼';
+
+        const html = `
+          <div class="result-stock-header">
+            <div>
+              <div class="result-symbol">${ticker}</div>
+              <div class="result-company">Real-time Analysis</div>
+            </div>
+            <div class="result-price-info">
+              <div class="result-price">$${priceData.price.toFixed(2)}</div>
+              <div class="stock-change ${changeColor}" style="margin-top: 4px; font-size: 12px;">${changeSymbol} ${Math.abs(priceData.change).toFixed(2)} (${priceData.change_pct.toFixed(2)}%)</div>
+            </div>
+          </div>
+
+          <div class="scores-grid" style="margin-bottom: 1rem;">
+            <div class="score-box"><div class="score-label">Fund</div><div class="score-value ${getScoreClass(scores[0])}">${scores[0]}</div><div class="score-weight">15%</div></div>
+            <div class="score-box"><div class="score-label">Theme</div><div class="score-value ${getScoreClass(scores[1])}">${scores[1]}</div><div class="score-weight">25%</div></div>
+            <div class="score-box"><div class="score-label">GARP</div><div class="score-value ${getScoreClass(scores[2])}">${scores[2]}</div><div class="score-weight">20%</div></div>
+            <div class="score-box"><div class="score-label">Smart</div><div class="score-value ${getScoreClass(scores[3])}">${scores[3]}</div><div class="score-weight">25%</div></div>
+            <div class="score-box"><div class="score-label">Macro</div><div class="score-value ${getScoreClass(scores[4])}">${scores[4]}</div><div class="score-weight">15%</div></div>
+          </div>
+
+          <div class="alpha-section">
+            <div class="alpha-title">Alpha Divergence</div>
+            <div class="alpha-stats">
+              <div class="alpha-stat"><div class="alpha-stat-label">Alpha</div><div class="alpha-stat-value">${Math.round(alphaAvg)}</div></div>
+              <div class="alpha-stat"><div class="alpha-stat-label">Fund</div><div class="alpha-stat-value">${scores[0]}</div></div>
+              <div class="alpha-stat"><div class="alpha-stat-label">Gap</div><div class="alpha-stat-value">${divergence > 0 ? '+' : ''}${divergence}</div></div>
+            </div>
+            <div class="alpha-signal">${divergence > 10 ? '🟢 Underpriced' : divergence > 5 ? '🟡 Mildly Underpriced' : divergence < -10 ? '🔴 Overpriced' : divergence < -5 ? '🟠 Mildly Overpriced' : '🔵 Fairly Priced'}</div>
+          </div>
+
+          <div style="text-align: center; color: #666; font-size: 12px; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #90caf9;">
+            💡 Click "ADD TO WATCHLIST" to add to your dashboard, or "CANCEL" to dismiss
+          </div>
+        `;
+
+        document.getElementById('analysisResultContent').innerHTML = html;
+        document.getElementById('analysisResultContainer').classList.remove('hidden');
+        
+        // Scroll to result
+        document.getElementById('analysisResultContainer').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        
+        console.log('✓ Result displayed:', ticker);
+      } catch (error) {
+        console.error('✗ Error displaying result:', error);
+      }
+    }
+
+    function addToWatchlist() {
+      try {
+        if (!currentAnalyzedTicker) {
+          alert('No ticker to add');
+          return;
+        }
+
+        const ticker = currentAnalyzedTicker;
+
+        // Check if already in watchlist
+        if (visibleStocks.includes(ticker)) {
+          alert(`${ticker} is already in your watchlist`);
+          cancelAnalysis();
+          return;
+        }
+
+        console.log('Adding to watchlist:', ticker);
+        
+        // Add to watchlist
+        visibleStocks.push(ticker);
+        
+        // Update count
+        document.getElementById('stockCount').textContent = visibleStocks.length;
+        
+        // Render dashboard
+        renderDashboard();
+        
+        // Clear result
+        cancelAnalysis();
+        
+        console.log('✓ Ticker added to watchlist:', ticker);
+      } catch (error) {
+        console.error('✗ Error adding to watchlist:', error);
+        alert(`Error adding ticker: ${error.message}`);
+      }
+    }
+
+    function cancelAnalysis() {
+      try {
+        // Hide result container
+        document.getElementById('analysisResultContainer').classList.add('hidden');
+        document.getElementById('analysisResultContent').innerHTML = '';
+        
+        // Clear stored data
+        currentAnalyzedTicker = null;
+        currentAnalyzedData = null;
+        
+        // Clear input
+        document.getElementById('searchInput').value = '';
+        document.getElementById('searchInput').focus();
+        
+        console.log('✓ Analysis cancelled');
+      } catch (error) {
+        console.error('✗ Error cancelling analysis:', error);
+      }
+    }
+
+    // ====================================================================
+    // SECTION 5: PAGE INITIALIZATION
+    // ====================================================================
+    // Purpose: Load the dashboard when page opens
+    // This runs ONCE when the HTML page loads
+    // ====================================================================
 
     renderDashboard();
   </script>
