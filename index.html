@@ -625,7 +625,7 @@
       });
     }
 
-    // SEARCH & ANALYZE
+    // SEARCH & ANALYZE - Show immediately, load analysis in background
     async function analyzeStock() {
       const ticker = document.getElementById('searchInput').value.toUpperCase().trim();
       if (!ticker) {
@@ -633,46 +633,249 @@
         return;
       }
 
-      const container = document.getElementById('searchResultContainer');
-      container.innerHTML = '<div style="text-align: center; padding: 2rem;"><p>⏳ Analyzing ' + ticker + '...</p></div>';
-      container.style.display = 'block';
-
       console.log('Searching for:', ticker);
 
-      let priceData_search = null;
-      if (finnhubAPI) {
-        console.log('Attempting API call...');
-        priceData_search = await fetchPriceFromFinnhub(ticker);
-        console.log('API result:', priceData_search);
-      } else {
-        console.log('API not connected, using demo data');
+      // Check cache first
+      const cached = localStorage.getItem(`analysis-${ticker}`);
+      if (cached) {
+        console.log('Found in cache:', ticker);
+        const data = JSON.parse(cached);
+        renderSearchResult(ticker, data.stock, data.analysis);
+        document.getElementById('searchInput').value = '';
+        return;
       }
 
-      // Use API data, fall back to demo, or create minimal data
-      let stockData = priceData_search || demoData[ticker];
+      // STEP 1: Get price immediately (sync)
+      let stockData = demoData[ticker];
       if (!stockData) {
-        console.warn('No data found for:', ticker);
         stockData = { 
           price: 100, 
           change: 0, 
           change_pct: 0, 
-          company: ticker + ' (Limited Data)',
+          company: ticker,
           price_usd: 100
         };
       }
 
-      let analysis = mockAnalysis[ticker];
-      if (!analysis) {
-        console.log('No analysis for this ticker, generating basic');
-        analysis = generateBasicAnalysis(ticker);
-      }
-
-      console.log('Stock data:', stockData);
-      console.log('Analysis:', analysis);
-      console.log('Rendering search result for:', ticker);
-      
-      renderSearchResult(ticker, stockData, analysis);
+      // STEP 2: Show immediate card with loading states
+      renderSearchResultLoading(ticker, stockData);
       document.getElementById('searchInput').value = '';
+
+      // STEP 3: Load chart asynchronously (don't wait)
+      setTimeout(() => loadChartAsync(ticker, stockData.price), 100);
+
+      // STEP 4: Generate analysis asynchronously (don't wait)
+      setTimeout(() => generateAnalysisAsync(ticker, stockData), 200);
+    }
+
+    function renderSearchResultLoading(ticker, stock) {
+      const changeColor = stock.change >= 0 ? 'positive' : 'negative';
+      const changeSymbol = stock.change >= 0 ? '▲' : '▼';
+
+      let html = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <div class="search-result-badge">🔍 SEARCH RESULT</div>
+          <div class="search-result-icons">
+            <button class="icon-btn close" title="Close" onclick="closeSearchResult()">✕</button>
+          </div>
+        </div>
+
+        <div class="stock-header">
+          <div><div class="stock-symbol">${ticker}</div><div style="font-size:11px;color:#999;">${stock.company || ''}</div></div>
+          <div class="stock-price-info">
+            <div class="stock-price">$${stock.price ? stock.price.toFixed(2) : '—'}</div>
+            <div class="stock-change ${changeColor}">${changeSymbol} ${Math.abs(stock.change).toFixed(2)} (${stock.change_pct.toFixed(2)}%)</div>
+          </div>
+        </div>
+
+        <div class="scores-grid" id="scores-${ticker}" style="opacity: 0.5;">
+          <div class="score-box"><div class="score-label">Fund</div><div class="score-value neutral">—</div><div class="score-weight">15%</div></div>
+          <div class="score-box"><div class="score-label">Theme</div><div class="score-value neutral">—</div><div class="score-weight">25%</div></div>
+          <div class="score-box"><div class="score-label">GARP</div><div class="score-value neutral">—</div><div class="score-weight">20%</div></div>
+          <div class="score-box"><div class="score-label">Smart</div><div class="score-value neutral">—</div><div class="score-weight">25%</div></div>
+          <div class="score-box"><div class="score-label">Macro</div><div class="score-value neutral">—</div><div class="score-weight">15%</div></div>
+        </div>
+
+        <div class="alpha-section" style="opacity: 0.5;">
+          <div class="alpha-title">Alpha Divergence</div>
+          <div style="text-align: center; padding: 1rem; color: #999; font-size: 12px;">⏳ Analyzing...</div>
+        </div>
+
+        <div class="technical-signal" style="opacity: 0.5;">
+          <div class="tech-label">Technical Timing</div>
+          <div class="tech-signal">—</div>
+        </div>
+
+        <div class="chart-container" style="opacity: 0.5;">
+          <div class="chart-title">60-Day Candlestick (Loading...)</div>
+          <div class="chart-wrapper">
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px;">
+              ⏳ Building candlestick chart...
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align: center; padding: 2rem; color: #999; font-size: 12px;">
+          📊 Loading full 5-dimension analysis in background...
+        </div>
+
+        <div id="analysis-container-${ticker}"></div>
+      `;
+
+      document.getElementById('searchResultContainer').innerHTML = html;
+      document.getElementById('searchResultContainer').style.display = 'block';
+    }
+
+    async function loadChartAsync(ticker, price) {
+      try {
+        console.log('Loading chart async for:', ticker);
+        // Chart will be drawn by drawCandlestick when called
+        const candleData = generateCandleData(price, 60);
+        
+        // Find and update the chart container
+        const chartContainer = document.querySelector(`#searchResultContainer .chart-container`);
+        if (chartContainer) {
+          chartContainer.style.opacity = '1';
+          chartContainer.innerHTML = `
+            <div class="chart-title">60-Day Candlestick (Green = Up, Red = Down)</div>
+            <div class="chart-wrapper">
+              <div class="y-axis-labels" id="ylabels-search-${ticker}"></div>
+              <div class="candlestick-chart" id="search-chart-${ticker}" style="position: relative; height: 160px;"></div>
+            </div>
+            <div class="x-axis-labels" id="xlabels-search-${ticker}"></div>
+          `;
+          
+          // Draw the candlestick
+          await new Promise(resolve => setTimeout(resolve, 50));
+          drawCandlestickSimple(ticker, candleData, `search-chart-${ticker}`);
+          console.log('Chart loaded for:', ticker);
+        }
+      } catch (error) {
+        console.error('Chart load error:', error);
+      }
+    }
+
+    async function generateAnalysisAsync(ticker, stock) {
+      try {
+        console.log('Generating analysis async for:', ticker);
+        
+        // Call Claude API to generate 5D analysis
+        const analysis = await generateAnalysisViaClaude(ticker, stock);
+        
+        // Update the scores
+        const scores = [
+          analysis.fundamental.score,
+          analysis.thematic.score,
+          analysis.garp.score,
+          analysis.smart_money.score,
+          analysis.macro.score
+        ];
+
+        // Render the full analysis card
+        renderSearchResultFull(ticker, stock, analysis);
+        
+        // Cache it
+        localStorage.setItem(`analysis-${ticker}`, JSON.stringify({ stock, analysis }));
+        console.log('Analysis cached for:', ticker);
+      } catch (error) {
+        console.error('Analysis generation error:', error);
+        // Show basic analysis even if Claude call fails
+        const basicAnalysis = generateBasicAnalysis(ticker);
+        renderSearchResultFull(ticker, stock, basicAnalysis);
+      }
+    }
+
+    async function generateAnalysisViaClaude(ticker, stock) {
+      try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1000,
+            messages: [
+              {
+                role: 'user',
+                content: `Generate a concise 5-dimension investment analysis for ticker ${ticker} trading at $${stock.price}. Return ONLY valid JSON (no markdown, no backticks):
+{
+  "fundamental": { "score": 1-100, "commentary": ["point1", "point2", "point3"] },
+  "thematic": { "score": 1-100, "commentary": ["point1", "point2", "point3"] },
+  "garp": { "score": 1-100, "commentary": ["point1", "point2", "point3"] },
+  "smart_money": { "score": 1-100, "commentary": ["point1", "point2", "point3"] },
+  "macro": { "score": 1-100, "commentary": ["point1", "point2", "point3"] },
+  "technical": "Buy|Hold|Sell",
+  "interpretation": "One sentence thesis"
+}`
+              }
+            ]
+          })
+        });
+
+        const data = await response.json();
+        if (data.content && data.content[0]) {
+          const text = data.content[0].text;
+          const cleaned = text.replace(/```json|```/g, '').trim();
+          const analysis = JSON.parse(cleaned);
+          return analysis;
+        }
+        return generateBasicAnalysis(ticker);
+      } catch (error) {
+        console.error('Claude API error:', error);
+        return generateBasicAnalysis(ticker);
+      }
+    }
+
+    function drawCandlestickSimple(ticker, candleData, containerId) {
+      try {
+        const canvasEl = document.getElementById(containerId);
+        if (!canvasEl) return;
+        
+        canvasEl.innerHTML = '';
+        const width = canvasEl.clientWidth;
+        const height = canvasEl.clientHeight;
+        const candleWidth = width / candleData.length;
+        
+        const prices = candleData.map(d => [d.low, d.high]).flat();
+        const minPrice = Math.min(...prices);
+        const maxPrice = Math.max(...prices);
+        const priceRange = maxPrice - minPrice;
+        
+        candleData.forEach((candle, idx) => {
+          const x = idx * candleWidth;
+          const yScale = height / priceRange;
+          const low = height - ((candle.low - minPrice) * yScale);
+          const high = height - ((candle.high - minPrice) * yScale);
+          const open = height - ((candle.open - minPrice) * yScale);
+          const close = height - ((candle.close - minPrice) * yScale);
+          const isUp = candle.close >= candle.open;
+          
+          // Wick
+          const wickDiv = document.createElement('div');
+          wickDiv.style.position = 'absolute';
+          wickDiv.style.left = (x + candleWidth * 0.4) + 'px';
+          wickDiv.style.top = high + 'px';
+          wickDiv.style.width = '1px';
+          wickDiv.style.height = (low - high) + 'px';
+          wickDiv.style.background = isUp ? '#4caf50' : '#f44336';
+          canvasEl.appendChild(wickDiv);
+          
+          // Body
+          const bodyTop = Math.min(open, close);
+          const bodyHeight = Math.abs(close - open) || 1;
+          const bodyDiv = document.createElement('div');
+          bodyDiv.style.position = 'absolute';
+          bodyDiv.style.left = (x + candleWidth * 0.15) + 'px';
+          bodyDiv.style.top = bodyTop + 'px';
+          bodyDiv.style.width = candleWidth * 0.7 + 'px';
+          bodyDiv.style.height = bodyHeight + 'px';
+          bodyDiv.style.background = isUp ? '#4caf50' : '#f44336';
+          canvasEl.appendChild(bodyDiv);
+        });
+      } catch (error) {
+        console.error('Candlestick error:', error);
+      }
     }
 
     function generateBasicAnalysis(ticker) {
@@ -688,6 +891,105 @@
     }
 
     function renderSearchResult(ticker, stock, analysis) {
+      // Alias for renderSearchResultFull (used when loading from cache)
+      renderSearchResultFull(ticker, stock, analysis);
+    }
+
+    function renderSearchResultFull(ticker, stock, analysis) {
+      try {
+        const scores = [analysis.fundamental.score, analysis.thematic.score, analysis.garp.score, analysis.smart_money.score, analysis.macro.score];
+        const alphaAvg = (scores[1] + scores[2] + scores[3] + scores[4]) / 4;
+        const divergence = Math.round(alphaAvg - scores[0]);
+        const changeColor = stock.change >= 0 ? 'positive' : 'negative';
+        const changeSymbol = stock.change >= 0 ? '▲' : '▼';
+
+        let html = `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div class="search-result-badge">🔍 SEARCH RESULT</div>
+            <div class="search-result-icons">
+              <button class="icon-btn close" title="Close" onclick="closeSearchResult()">✕</button>
+            </div>
+          </div>
+
+          <div class="stock-header">
+            <div><div class="stock-symbol">${ticker}</div><div style="font-size:11px;color:#999;">${stock.company || ''}</div></div>
+            <div class="stock-price-info">
+              <div class="stock-price">$${stock.price ? stock.price.toFixed(2) : '—'}</div>
+              <div class="stock-change ${changeColor}">${changeSymbol} ${Math.abs(stock.change).toFixed(2)} (${stock.change_pct.toFixed(2)}%)</div>
+            </div>
+          </div>
+
+          <div class="scores-grid">
+            <div class="score-box"><div class="score-label">Fund</div><div class="score-value ${getScoreClass(scores[0])}">${scores[0]}</div><div class="score-weight">15%</div></div>
+            <div class="score-box"><div class="score-label">Theme</div><div class="score-value ${getScoreClass(scores[1])}">${scores[1]}</div><div class="score-weight">25%</div></div>
+            <div class="score-box"><div class="score-label">GARP</div><div class="score-value ${getScoreClass(scores[2])}">${scores[2]}</div><div class="score-weight">20%</div></div>
+            <div class="score-box"><div class="score-label">Smart</div><div class="score-value ${getScoreClass(scores[3])}">${scores[3]}</div><div class="score-weight">25%</div></div>
+            <div class="score-box"><div class="score-label">Macro</div><div class="score-value ${getScoreClass(scores[4])}">${scores[4]}</div><div class="score-weight">15%</div></div>
+          </div>
+
+          <div class="alpha-section">
+            <div class="alpha-title">Alpha Divergence</div>
+            <div class="alpha-stats">
+              <div class="alpha-stat"><div class="alpha-stat-label">Alpha</div><div class="alpha-stat-value">${Math.round(alphaAvg)}</div></div>
+              <div class="alpha-stat"><div class="alpha-stat-label">Fund</div><div class="alpha-stat-value">${scores[0]}</div></div>
+              <div class="alpha-stat"><div class="alpha-stat-label">Gap</div><div class="alpha-stat-value">${divergence > 0 ? '+' : ''}${divergence}</div></div>
+            </div>
+            <div class="alpha-signal">${divergence > 10 ? '🟢 Underpriced' : divergence > 5 ? '🟡 Mildly Underpriced' : divergence < -10 ? '🔴 Overpriced' : divergence < -5 ? '🟠 Mildly Overpriced' : '🔵 Fairly Priced'}</div>
+          </div>
+
+          <div class="technical-signal">
+            <div class="tech-label">Technical Timing</div>
+            <div class="tech-signal">${analysis.technical || 'Hold'}</div>
+          </div>
+
+          <div class="toggle-analysis" onclick="toggleSearchAnalysis('${ticker}')">
+            <span class="toggle-arrow" id="search-arrow-${ticker}">▼</span>
+            <span class="toggle-text">Expand Detailed Analysis</span>
+          </div>
+
+          <div class="analysis-details" id="search-details-${ticker}">
+            <div class="commentary">
+              <div class="commentary-section">
+                <div class="commentary-title">Fundamental (${scores[0]})</div>
+                ${analysis.fundamental.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+              </div>
+              <div class="commentary-section">
+                <div class="commentary-title">Thematic (${scores[1]})</div>
+                ${analysis.thematic.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+              </div>
+              <div class="commentary-section">
+                <div class="commentary-title">GARP (${scores[2]})</div>
+                ${analysis.garp.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+              </div>
+              <div class="commentary-section">
+                <div class="commentary-title">Smart Money (${scores[3]})</div>
+                ${analysis.smart_money.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+              </div>
+              <div class="commentary-section">
+                <div class="commentary-title">Macro (${scores[4]})</div>
+                ${analysis.macro.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+              </div>
+            </div>
+            <div class="interpretation">
+              <strong>Investment Thesis:</strong> ${analysis.interpretation || 'Analysis in progress...'}
+            </div>
+          </div>
+        `;
+
+        // Find the chart container and append the analysis
+        const searchContainer = document.getElementById('searchResultContainer');
+        const chartContainer = searchContainer.querySelector('.chart-container');
+        
+        if (chartContainer) {
+          // Insert analysis after chart
+          chartContainer.insertAdjacentHTML('afterend', html);
+        } else {
+          searchContainer.innerHTML = html;
+        }
+      } catch (error) {
+        console.error('Error rendering full analysis:', error);
+      }
+    }
       try {
         console.log('=== renderSearchResult START ===');
         console.log('Ticker:', ticker);
