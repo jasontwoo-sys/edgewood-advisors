@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -319,7 +320,13 @@
 
     // UPDATED: Use backend for price fetches
     async function fetchPriceFromFinnhub(ticker) {
-      if (!finnhubAPI) return null;
+      if (!finnhubAPI) {
+        console.log('finnhubAPI flag is false, skipping fetch');
+        return null;
+      }
+      
+      console.log('Calling /api/finnhub for:', ticker);
+      
       try {
         const response = await fetch('/api/finnhub', {
           method: 'POST',
@@ -327,8 +334,15 @@
           body: JSON.stringify({ ticker })
         });
         
+        console.log('API response status:', response.status);
+        
         const data = await response.json();
-        if (!data.price) return null;
+        console.log('API response data:', data);
+        
+        if (!data.price) {
+          console.warn('No price in response:', data);
+          return null;
+        }
         
         return {
           price: data.price,
@@ -595,21 +609,30 @@
       container.innerHTML = '<div style="text-align: center; padding: 2rem;"><p>Analyzing ' + ticker + '...</p></div>';
       container.style.display = 'block';
 
+      console.log('Searching for:', ticker);
+
       let priceData_search = null;
       if (finnhubAPI) {
+        console.log('Attempting API call...');
         priceData_search = await fetchPriceFromFinnhub(ticker);
+        console.log('API result:', priceData_search);
+      } else {
+        console.log('API not connected, using demo data');
       }
 
       let stockData = priceData_search || demoData[ticker];
       if (!stockData) {
+        console.warn('No data found for:', ticker);
         stockData = { price: 0, change: 0, change_pct: 0, company: ticker };
       }
 
       let analysis = mockAnalysis[ticker];
       if (!analysis) {
+        console.log('No analysis for this ticker, generating basic');
         analysis = generateBasicAnalysis(ticker);
       }
 
+      console.log('Rendering search result for:', ticker);
       renderSearchResult(ticker, stockData, analysis);
       document.getElementById('searchInput').value = '';
     }
@@ -627,98 +650,107 @@
     }
 
     function renderSearchResult(ticker, stock, analysis) {
-      const scores = [analysis.fundamental.score, analysis.thematic.score, analysis.garp.score, analysis.smart_money.score, analysis.macro.score];
-      const alphaAvg = (scores[1] + scores[2] + scores[3] + scores[4]) / 4;
-      const divergence = Math.round(alphaAvg - scores[0]);
-      const changeColor = stock.change >= 0 ? 'positive' : 'negative';
-      const changeSymbol = stock.change >= 0 ? '▲' : '▼';
-      const isInWatchlist = visibleStocks.includes(ticker);
+      try {
+        const scores = [analysis.fundamental.score, analysis.thematic.score, analysis.garp.score, analysis.smart_money.score, analysis.macro.score];
+        const alphaAvg = (scores[1] + scores[2] + scores[3] + scores[4]) / 4;
+        const divergence = Math.round(alphaAvg - scores[0]);
+        const changeColor = stock.change >= 0 ? 'positive' : 'negative';
+        const changeSymbol = stock.change >= 0 ? '▲' : '▼';
+        const isInWatchlist = visibleStocks.includes(ticker);
 
-      let html = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-          <div class="search-result-badge">🔍 SEARCH RESULT</div>
-          <div class="search-result-icons">
-            <button class="icon-btn add" title="Add to Watchlist" onclick="addSearchResultToWatchlist('${ticker}')" style="display: ${isInWatchlist ? 'none' : 'block'};">➕</button>
-            <button class="icon-btn close" title="Close" onclick="closeSearchResult()">✕</button>
-          </div>
-        </div>
-
-        <div class="stock-header">
-          <div><div class="stock-symbol">${ticker}</div><div style="font-size:11px;color:#999;">${stock.company || ''}</div></div>
-          <div class="stock-price-info">
-            <div class="stock-price">$${stock.price ? stock.price.toFixed(2) : '—'}</div>
-            <div class="stock-change ${changeColor}">${changeSymbol} ${Math.abs(stock.change).toFixed(2)} (${stock.change_pct.toFixed(2)}%)</div>
-          </div>
-        </div>
-
-        <div class="scores-grid">
-          <div class="score-box"><div class="score-label">Fund</div><div class="score-value ${getScoreClass(scores[0])}">${scores[0]}</div><div class="score-weight">15%</div></div>
-          <div class="score-box"><div class="score-label">Theme</div><div class="score-value ${getScoreClass(scores[1])}">${scores[1]}</div><div class="score-weight">25%</div></div>
-          <div class="score-box"><div class="score-label">GARP</div><div class="score-value ${getScoreClass(scores[2])}">${scores[2]}</div><div class="score-weight">20%</div></div>
-          <div class="score-box"><div class="score-label">Smart</div><div class="score-value ${getScoreClass(scores[3])}">${scores[3]}</div><div class="score-weight">25%</div></div>
-          <div class="score-box"><div class="score-label">Macro</div><div class="score-value ${getScoreClass(scores[4])}">${scores[4]}</div><div class="score-weight">15%</div></div>
-        </div>
-
-        <div class="alpha-section">
-          <div class="alpha-title">Alpha Divergence</div>
-          <div class="alpha-stats">
-            <div class="alpha-stat"><div class="alpha-stat-label">Alpha</div><div class="alpha-stat-value">${Math.round(alphaAvg)}</div></div>
-            <div class="alpha-stat"><div class="alpha-stat-label">Fund</div><div class="alpha-stat-value">${scores[0]}</div></div>
-            <div class="alpha-stat"><div class="alpha-stat-label">Gap</div><div class="alpha-stat-value">${divergence > 0 ? '+' : ''}${divergence}</div></div>
-          </div>
-          <div class="alpha-signal">${divergence > 10 ? '🟢 Underpriced' : divergence > 5 ? '🟡 Mildly Underpriced' : divergence < -10 ? '🔴 Overpriced' : divergence < -5 ? '🟠 Mildly Overpriced' : '🔵 Fairly Priced'}</div>
-        </div>
-
-        <div class="technical-signal">
-          <div class="tech-label">Technical Timing</div>
-          <div class="tech-signal">${analysis.technical}</div>
-        </div>
-
-        <div class="chart-container">
-          <div class="chart-title">60-Day Candlestick (Green = Up, Red = Down)</div>
-          <div class="chart-wrapper">
-            <div class="y-axis-labels" id="ylabels-search-chart-${ticker}"></div>
-            <div class="candlestick-chart" id="search-chart-${ticker}"></div>
-          </div>
-          <div class="x-axis-labels" id="xlabels-search-chart-${ticker}"></div>
-        </div>
-
-        <div class="toggle-analysis" onclick="toggleSearchAnalysis('${ticker}')">
-          <span class="toggle-arrow" id="search-arrow-${ticker}">▼</span>
-          <span class="toggle-text">Expand Detailed Analysis</span>
-        </div>
-
-        <div class="analysis-details" id="search-details-${ticker}">
-          <div class="commentary">
-            <div class="commentary-section">
-              <div class="commentary-title">Fundamental (${scores[0]})</div>
-              ${analysis.fundamental.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
-            </div>
-            <div class="commentary-section">
-              <div class="commentary-title">Thematic (${scores[1]})</div>
-              ${analysis.thematic.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
-            </div>
-            <div class="commentary-section">
-              <div class="commentary-title">GARP (${scores[2]})</div>
-              ${analysis.garp.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
-            </div>
-            <div class="commentary-section">
-              <div class="commentary-title">Smart Money (${scores[3]})</div>
-              ${analysis.smart_money.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
-            </div>
-            <div class="commentary-section">
-              <div class="commentary-title">Macro (${scores[4]})</div>
-              ${analysis.macro.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+        let html = `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div class="search-result-badge">🔍 SEARCH RESULT</div>
+            <div class="search-result-icons">
+              <button class="icon-btn add" title="Add to Watchlist" onclick="addSearchResultToWatchlist('${ticker}')" style="display: ${isInWatchlist ? 'none' : 'block'};">➕</button>
+              <button class="icon-btn close" title="Close" onclick="closeSearchResult()">✕</button>
             </div>
           </div>
-          <div class="interpretation">
-            <strong>Investment Thesis:</strong> ${analysis.interpretation}
-          </div>
-        </div>
-      `;
 
-      document.getElementById('searchResultCard').innerHTML = html;
-      drawCandlestick(ticker, `search-chart-${ticker}`);
+          <div class="stock-header">
+            <div><div class="stock-symbol">${ticker}</div><div style="font-size:11px;color:#999;">${stock.company || ''}</div></div>
+            <div class="stock-price-info">
+              <div class="stock-price">$${stock.price ? stock.price.toFixed(2) : '—'}</div>
+              <div class="stock-change ${changeColor}">${changeSymbol} ${Math.abs(stock.change).toFixed(2)} (${stock.change_pct.toFixed(2)}%)</div>
+            </div>
+          </div>
+
+          <div class="scores-grid">
+            <div class="score-box"><div class="score-label">Fund</div><div class="score-value ${getScoreClass(scores[0])}">${scores[0]}</div><div class="score-weight">15%</div></div>
+            <div class="score-box"><div class="score-label">Theme</div><div class="score-value ${getScoreClass(scores[1])}">${scores[1]}</div><div class="score-weight">25%</div></div>
+            <div class="score-box"><div class="score-label">GARP</div><div class="score-value ${getScoreClass(scores[2])}">${scores[2]}</div><div class="score-weight">20%</div></div>
+            <div class="score-box"><div class="score-label">Smart</div><div class="score-value ${getScoreClass(scores[3])}">${scores[3]}</div><div class="score-weight">25%</div></div>
+            <div class="score-box"><div class="score-label">Macro</div><div class="score-value ${getScoreClass(scores[4])}">${scores[4]}</div><div class="score-weight">15%</div></div>
+          </div>
+
+          <div class="alpha-section">
+            <div class="alpha-title">Alpha Divergence</div>
+            <div class="alpha-stats">
+              <div class="alpha-stat"><div class="alpha-stat-label">Alpha</div><div class="alpha-stat-value">${Math.round(alphaAvg)}</div></div>
+              <div class="alpha-stat"><div class="alpha-stat-label">Fund</div><div class="alpha-stat-value">${scores[0]}</div></div>
+              <div class="alpha-stat"><div class="alpha-stat-label">Gap</div><div class="alpha-stat-value">${divergence > 0 ? '+' : ''}${divergence}</div></div>
+            </div>
+            <div class="alpha-signal">${divergence > 10 ? '🟢 Underpriced' : divergence > 5 ? '🟡 Mildly Underpriced' : divergence < -10 ? '🔴 Overpriced' : divergence < -5 ? '🟠 Mildly Overpriced' : '🔵 Fairly Priced'}</div>
+          </div>
+
+          <div class="technical-signal">
+            <div class="tech-label">Technical Timing</div>
+            <div class="tech-signal">${analysis.technical || 'Hold'}</div>
+          </div>
+
+          <div class="chart-container">
+            <div class="chart-title">60-Day Candlestick (Green = Up, Red = Down)</div>
+            <div class="chart-wrapper">
+              <div class="y-axis-labels" id="ylabels-search-chart-${ticker}"></div>
+              <div class="candlestick-chart" id="search-chart-${ticker}"></div>
+            </div>
+            <div class="x-axis-labels" id="xlabels-search-chart-${ticker}"></div>
+          </div>
+
+          <div class="toggle-analysis" onclick="toggleSearchAnalysis('${ticker}')">
+            <span class="toggle-arrow" id="search-arrow-${ticker}">▼</span>
+            <span class="toggle-text">Expand Detailed Analysis</span>
+          </div>
+
+          <div class="analysis-details" id="search-details-${ticker}">
+            <div class="commentary">
+              <div class="commentary-section">
+                <div class="commentary-title">Fundamental (${scores[0]})</div>
+                ${analysis.fundamental.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+              </div>
+              <div class="commentary-section">
+                <div class="commentary-title">Thematic (${scores[1]})</div>
+                ${analysis.thematic.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+              </div>
+              <div class="commentary-section">
+                <div class="commentary-title">GARP (${scores[2]})</div>
+                ${analysis.garp.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+              </div>
+              <div class="commentary-section">
+                <div class="commentary-title">Smart Money (${scores[3]})</div>
+                ${analysis.smart_money.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+              </div>
+              <div class="commentary-section">
+                <div class="commentary-title">Macro (${scores[4]})</div>
+                ${analysis.macro.commentary.map(c => `<div class="commentary-bullet">${c}</div>`).join('')}
+              </div>
+            </div>
+            <div class="interpretation">
+              <strong>Investment Thesis:</strong> ${analysis.interpretation || 'Analysis not available for this ticker'}
+            </div>
+          </div>
+        `;
+
+        document.getElementById('searchResultCard').innerHTML = html;
+        setTimeout(() => drawCandlestick(ticker, `search-chart-${ticker}`), 100);
+      } catch (error) {
+        console.error('Error rendering search result:', error);
+        document.getElementById('searchResultContainer').innerHTML = `
+          <div style="background: #ffebee; border: 1px solid #f44336; padding: 1.5rem; border-radius: 8px; color: #c62828;">
+            <strong>Error:</strong> Failed to render analysis. Please try another ticker.
+          </div>
+        `;
+      }
     }
 
     function toggleSearchAnalysis(ticker) {
