@@ -1,111 +1,74 @@
-/**
- * Finnhub API Proxy - Vercel Serverless Function
- * Location: /api/finnhub.js in your GitHub repo
- * Purpose: Fetch stock prices from Finnhub with CORS headers enabled
- * 
- * CORS Setup:
- * - Allows requests from any origin (adjust for production security)
- * - Includes proper error handling
- * - Validates inputs before calling Finnhub
- * - Returns proper HTTP status codes
- */
+// Vercel API Route - Finnhub Proxy with CORS
+// File: /api/finnhub.js
 
-export default async function handler(req, res) {
-  // ====================================================================
-  // CORS Headers - Allow cross-origin requests
-  // ====================================================================
-  res.setHeader('Access-Control-Allow-Origin', '*'); // Allow all origins (or restrict to your domain)
+export default async (req, res) => {
+  // CORS Headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Cache-Control', 'no-store');
 
-  // Handle preflight requests (OPTIONS method)
+  // Handle OPTIONS (preflight)
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  // ====================================================================
-  // Validate incoming request
-  // ====================================================================
+  // Only allow GET
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { symbol, token } = req.query;
-
-  // Validate symbol
-  if (!symbol || typeof symbol !== 'string') {
-    return res.status(400).json({ error: 'Missing or invalid symbol parameter' });
-  }
-
-  if (!/^[A-Z]{1,5}$/.test(symbol)) {
-    return res.status(400).json({ error: 'Invalid symbol format' });
-  }
-
-  // Validate token
-  if (!token || typeof token !== 'string') {
-    return res.status(400).json({ error: 'Missing API token' });
-  }
-
-  // ====================================================================
-  // Fetch from Finnhub API
-  // ====================================================================
   try {
-    console.log(`[Proxy] Fetching ${symbol} from Finnhub...`);
+    const { symbol, token } = req.query;
 
-    const finnhubUrl = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(token)}`;
-
-    const response = await fetch(finnhubUrl, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000 // 10 second timeout
-    });
-
-    if (!response.ok) {
-      console.error(`[Proxy] Finnhub returned ${response.status} for ${symbol}`);
-      return res.status(response.status).json({
-        error: `Finnhub API error: ${response.status}`,
-        symbol
-      });
+    // Validate inputs
+    if (!symbol) {
+      return res.status(400).json({ error: 'Missing symbol' });
     }
 
+    if (!token) {
+      return res.status(400).json({ error: 'Missing token' });
+    }
+
+    // Validate symbol format
+    if (!/^[A-Z]{1,5}$/.test(symbol)) {
+      return res.status(400).json({ error: 'Invalid symbol' });
+    }
+
+    console.log(`[finnhub.js] Fetching ${symbol}`);
+
+    // Call Finnhub API
+    const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${token}`;
+    
+    const response = await fetch(url);
     const data = await response.json();
 
-    // ====================================================================
-    // Validate response data
-    // ====================================================================
-    if (!data.c) {
-      console.warn(`[Proxy] No price data for ${symbol}`);
-      return res.status(400).json({
-        error: `No price data available for ${symbol}`,
-        symbol
+    // Check for errors from Finnhub
+    if (!data || !data.c) {
+      console.log(`[finnhub.js] No data for ${symbol}`);
+      return res.status(200).json({
+        c: null,
+        error: 'No price data'
       });
     }
 
-    console.log(`[Proxy] ✓ ${symbol}: $${data.c}`);
+    console.log(`[finnhub.js] ✓ ${symbol}: $${data.c}`);
 
-    // ====================================================================
-    // Return the data
-    // ====================================================================
+    // Return the price data
     return res.status(200).json({
-      c: data.c,        // current price
-      d: data.d || 0,   // change
-      dp: data.dp || 0, // change percent
-      h: data.h,        // high
-      l: data.l,        // low
-      o: data.o,        // open
-      v: data.v,        // volume
-      t: data.t         // timestamp
+      c: data.c,    // current
+      d: data.d,    // change
+      dp: data.dp,  // percent
+      h: data.h,    // high
+      l: data.l,    // low
+      o: data.o,    // open
+      v: data.v     // volume
     });
 
   } catch (error) {
-    console.error(`[Proxy] Error fetching ${symbol}:`, error.message);
-
+    console.error('[finnhub.js] Error:', error.message);
     return res.status(500).json({
-      error: `Error fetching price: ${error.message}`,
-      symbol
+      error: error.message
     });
   }
-}
+};
