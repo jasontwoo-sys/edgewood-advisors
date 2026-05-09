@@ -608,18 +608,72 @@
       }
     }
 
-    function refreshPrices() {
-      console.log('🔄 Refresh clicked');
-      const now = new Date();
-      document.getElementById('lastUpdate').textContent = `Last updated: ${now.toLocaleString()}`;
+    async function refreshPrices() {
+      console.log('\n========================================');
+      console.log('🔄 REFRESH CLICKED');
+      console.log('========================================');
+      
+      const apiKey = localStorage.getItem('finnhubKey');
+      
+      if (!apiKey) {
+        console.log('⚠️  No API key in localStorage');
+        console.log('Using mock prices only');
+        renderDashboard();
+        updateTimestamp();
+        return;
+      }
+
+      console.log('✓ API key found');
+      console.log('Fetching real prices...\n');
+
+      let updatedCount = 0;
+      const tickers = Object.keys(stockData);
+      const proxyUrl = 'https://edgewood-advisors.vercel.app/api/finnhub';
+
+      for (const ticker of tickers) {
+        try {
+          const url = `${proxyUrl}?symbol=${ticker}&token=${apiKey}`;
+          console.log(`Fetching ${ticker}...`);
+          
+          const response = await fetch(url);
+          const data = await response.json();
+
+          if (data.c) {
+            const oldPrice = stockData[ticker].price;
+            stockData[ticker] = {
+              price: data.c,
+              change: data.d || 0,
+              change_pct: data.dp || 0
+            };
+            console.log(`  ✓ ${ticker}: $${data.c.toFixed(2)} (was $${oldPrice.toFixed(2)})`);
+            updatedCount++;
+          } else {
+            console.log(`  ⚠️  ${ticker}: No price data`);
+          }
+        } catch (error) {
+          console.error(`  ❌ ${ticker}: ${error.message}`);
+        }
+      }
+
+      console.log(`\n✓ Updated ${updatedCount}/${tickers.length} tickers`);
+      console.log('========================================\n');
+
       renderDashboard();
-      console.log('✓ Dashboard refreshed');
+      updateTimestamp();
     }
 
-    // Initialize timestamp on page load
-    document.getElementById('lastUpdate').textContent = `Last updated: ${new Date().toLocaleString()}`;
+    function updateTimestamp() {
+      const now = new Date();
+      document.getElementById('lastUpdate').textContent = `Last updated: ${now.toLocaleString()}`;
+      console.log(`Timestamp: ${now.toLocaleString()}`);
+    }
 
-    renderDashboard();
+    // Initialize on page load
+    console.log('🚀 PAGE LOADING\n');
+    updateTimestamp();
+    refreshPrices().then(() => {
+      console.log('Initial load complete\n');
+    });
   </script>
 </body>
 </html>
